@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# cron_job_v2.py - Genera cookie per i 40 nuovi account
+# cron_job_v2.py - Genera cookie per i 40 nuovi account con sistema di retry
 
 import asyncio
 import os
@@ -19,9 +19,52 @@ COOKIE_SUPABASE_KEY = os.environ.get("COOKIE_SUPABASE_KEY")
 DEFAULT_PASSWORD = "DDnmVV45!!"
 MAX_ATTEMPTS = 7
 PAUSE_BETWEEN_ACCOUNTS = 15
+PAUSE_BEFORE_RETRY = 30
 TIMEOUT = 90000
 
-from accounts_v2 import ACCOUNTS
+# 40 nuovi account
+ACCOUNTS = [
+    {'email': 'sandrominori50+ucupamikowa@gmail.com', 'name': 'ucupamikowa'},
+    {'email': 'sandrominori50+ubbmaad@gmail.com', 'name': 'ubbmaad'},
+    {'email': 'sandrominori50+unachizaadaa@gmail.com', 'name': 'unachizaadaa'},
+    {'email': 'sandrominori50+uzofequ@gmail.com', 'name': 'uzofequ'},
+    {'email': 'sandrominori50+ugaglchimulu@gmail.com', 'name': 'ugaglchimulu'},
+    {'email': 'sandrominori50+usfnejafi@gmail.com', 'name': 'usfnejafi'},
+    {'email': 'sandrominori50+ugaufkokagl@gmail.com', 'name': 'ugaufkokagl'},
+    {'email': 'sandrominori50+utuufvo@gmail.com', 'name': 'utuufvo'},
+    {'email': 'sandrominori50+umufela@gmail.com', 'name': 'umufela'},
+    {'email': 'sandrominori50+uzukimice@gmail.com', 'name': 'uzukimice'},
+    {'email': 'sandrominori50+uvatulukofo@gmail.com', 'name': 'uvatulukofo'},
+    {'email': 'sandrominori50+ugetrle@gmail.com', 'name': 'ugetrle'},
+    {'email': 'sandrominori50+usfkugl@gmail.com', 'name': 'usfkugl'},
+    {'email': 'sandrominori50+uzuculo@gmail.com', 'name': 'uzuculo'},
+    {'email': 'sandrominori50+uxipgda@gmail.com', 'name': 'uxipgda'},
+    {'email': 'sandrominori50+ulidazurzmu@gmail.com', 'name': 'ulidazurzmu'},
+    {'email': 'sandrominori50+uncglximo@gmail.com', 'name': 'uncglximo'},
+    {'email': 'sandrominori50+ufezusavo@gmail.com', 'name': 'ufezusavo'},
+    {'email': 'sandrominori50+ulileaature@gmail.com', 'name': 'ulileaature'},
+    {'email': 'sandrominori50+ulorenakino@gmail.com', 'name': 'ulorenakino'},
+    {'email': 'sandrominori50+uqulenazusa@gmail.com', 'name': 'uqulenazusa'},
+    {'email': 'sandrominori50+ukaramu@gmail.com', 'name': 'ukaramu'},
+    {'email': 'sandrominori50+uferalola@gmail.com', 'name': 'uferalola'},
+    {'email': 'sandrominori50+ummmarzsarm@gmail.com', 'name': 'ummmarzsarm'},
+    {'email': 'sandrominori50+udatrlefe@gmail.com', 'name': 'udatrlefe'},
+    {'email': 'sandrominori50+uaakiggzu@gmail.com', 'name': 'uaakiggzu'},
+    {'email': 'sandrominori50+uzorzvu@gmail.com', 'name': 'uzorzvu'},
+    {'email': 'sandrominori50+uwanepgbo@gmail.com', 'name': 'uwanepgbo'},
+    {'email': 'sandrominori50+udioodali@gmail.com', 'name': 'udioodali'},
+    {'email': 'sandrominori50+usadiadmobo@gmail.com', 'name': 'usadiadmobo'},
+    {'email': 'sandrominori50+ulixire@gmail.com', 'name': 'ulixire'},
+    {'email': 'sandrominori50+udiadnczo@gmail.com', 'name': 'udiadnczo'},
+    {'email': 'sandrominori50+uzalesagg@gmail.com', 'name': 'uzalesagg'},
+    {'email': 'sandrominori50+upabbkafone@gmail.com', 'name': 'upabbkafone'},
+    {'email': 'sandrominori50+uramincadkr@gmail.com', 'name': 'uramincadkr'},
+    {'email': 'sandrominori50+uganakaeara@gmail.com', 'name': 'uganakaeara'},
+    {'email': 'sandrominori50+urerafokrne@gmail.com', 'name': 'urerafokrne'},
+    {'email': 'sandrominori50+ufiwakota@gmail.com', 'name': 'ufiwakota'},
+    {'email': 'sandrominori50+ukrfojudi@gmail.com', 'name': 'ukrfojudi'},
+    {'email': 'sandrominori50+uornewafomo@gmail.com', 'name': 'uornewafomo'},
+]
 
 def log(msg):
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
@@ -35,7 +78,7 @@ def get_all_working_keys():
         resp = supabase.table('browser_use_keys').select('api_key').eq('status', 'working').execute()
         return [row['api_key'] for row in resp.data] if resp.data else []
     except Exception as e:
-        log(f"❌ Errore Supabase: {e}")
+        log(f"❌ Errore recupero chiavi: {e}")
         return []
 
 def get_random_working_key(exclude_keys=None):
@@ -71,12 +114,14 @@ def save_cookie_to_db(email, nome_utente, cookie_string, sesids, user_id):
         log(f"   ❌ Errore salvataggio: {e}")
         return False
 
-async def generate_cookie_for_account(api_key, account):
+async def generate_cookie_for_account(api_key, account, is_retry=False):
     email = account['email']
     nome = account['name']
     
     log(f"🚀 {nome} - {email}")
     log(f"   🔑 Chiave: {api_key[:20]}...")
+    if is_retry:
+        log(f"   🔄 TENTATIVO DI RECUPERO")
     
     client = AsyncBrowserUse(api_key=api_key)
     profile = None
@@ -140,7 +185,7 @@ async def generate_cookie_for_account(api_key, account):
 
 async def main():
     log("=" * 60)
-    log("CRON JOB V2 - 40 NUOVI ACCOUNT")
+    log("CRON JOB V2 - 40 NUOVI ACCOUNT CON RETRY")
     log("=" * 60)
     
     if not KEYS_SUPABASE_KEY:
@@ -154,8 +199,8 @@ async def main():
     
     log(f"🔑 Chiavi working: {len(all_keys)}")
     
+    # ==================== PRIMO CICLO ====================
     successi = 0
-    falliti = 0
     falliti_list = []
     
     for i, account in enumerate(ACCOUNTS):
@@ -169,7 +214,7 @@ async def main():
             if not api_key:
                 break
             
-            result = await generate_cookie_for_account(api_key, account)
+            result = await generate_cookie_for_account(api_key, account, is_retry=False)
             
             if result == True:
                 success = True
@@ -177,25 +222,30 @@ async def main():
                 break
             elif result == "rate_limit":
                 used_keys.append(api_key)
-                log(f"   🔄 Tentativo {attempt+1}/{MAX_ATTEMPTS} - cambio chiave...")
+                log(f"   🔄 Rate limit, cambio chiave ({attempt+1}/{MAX_ATTEMPTS})...")
                 continue
             else:
-                falliti += 1
-                falliti_list.append(account)
+                # Fallimento non dovuto a rate limit
                 break
         
         if not success:
-            falliti += 1
             falliti_list.append(account)
+            log(f"   ❌ Account fallito, verrà ritentato")
         
         if i < len(ACCOUNTS) - 1:
             await asyncio.sleep(PAUSE_BETWEEN_ACCOUNTS)
     
-    # Secondo ciclo per i falliti
+    log(f"\n📊 Primo ciclo completato: {successi} successi, {len(falliti_list)} falliti")
+    
+    # ==================== SECONDO CICLO (RITENTATIVI) ====================
     if falliti_list:
         log("\n" + "=" * 60)
-        log(f"🔄 RITENTO {len(falliti_list)} ACCOUNT FALLITI")
+        log(f"🔄 SECONDO CICLO - RITENTO {len(falliti_list)} ACCOUNT FALLITI")
         log("=" * 60)
+        
+        # Attendi prima di ritentare
+        log(f"⏳ Attesa {PAUSE_BEFORE_RETRY} secondi prima del secondo ciclo...")
+        await asyncio.sleep(PAUSE_BEFORE_RETRY)
         
         recuperati = 0
         
@@ -210,31 +260,36 @@ async def main():
                 if not api_key:
                     break
                 
-                result = await generate_cookie_for_account(api_key, account)
+                result = await generate_cookie_for_account(api_key, account, is_retry=True)
                 
                 if result == True:
                     success = True
                     recuperati += 1
                     successi += 1
-                    falliti -= 1
                     break
                 elif result == "rate_limit":
                     used_keys.append(api_key)
-                    log(f"   🔄 Tentativo {attempt+1}/{MAX_ATTEMPTS} - cambio chiave...")
+                    log(f"   🔄 Rate limit, cambio chiave ({attempt+1}/{MAX_ATTEMPTS})...")
                     continue
                 else:
                     break
+            
+            if success:
+                log(f"   ✅ RECUPERATO!")
+            else:
+                log(f"   ❌ Recupero fallito")
             
             if i < len(falliti_list) - 1:
                 await asyncio.sleep(PAUSE_BETWEEN_ACCOUNTS)
         
         log(f"\n📊 Recuperati nel secondo ciclo: {recuperati}/{len(falliti_list)}")
     
+    # ==================== RIEPILOGO FINALE ====================
     log("\n" + "=" * 60)
     log("📊 RIEPILOGO FINALE")
     log("=" * 60)
     log(f"✅ Successi totali: {successi}")
-    log(f"❌ Falliti totali: {falliti}")
+    log(f"❌ Falliti totali: {len(ACCOUNTS) - successi}")
     log(f"📊 Totale account: {len(ACCOUNTS)}")
     log("=" * 60)
 
