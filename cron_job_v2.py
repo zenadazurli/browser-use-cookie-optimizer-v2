@@ -1,297 +1,431 @@
 #!/usr/bin/env python3
-# cron_job_v2.py - Genera cookie per i 40 nuovi account con sistema di retry
+# collector_v2.py
+# Basato sul repository easyhits4u-surf-collector-main
+# USA SOLO I 40 NUOVI ACCOUNT con MULTITHREADING
 
-import asyncio
 import os
+import sys
+import time
+import threading
 import random
-import gc
+import requests
+import json
+import numpy as np
+import cv2
 from datetime import datetime
 from supabase import create_client
-from browser_use_sdk import AsyncBrowserUse
-from playwright.async_api import async_playwright
+from datasets import load_dataset
+import urllib3
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # ==================== CONFIGURAZIONE ====================
-KEYS_SUPABASE_URL = os.environ.get("KEYS_SUPABASE_URL", "https://kdqzfsmibquvvobjvjlj.supabase.co")
-KEYS_SUPABASE_KEY = os.environ.get("KEYS_SUPABASE_KEY")
-COOKIE_SUPABASE_URL = os.environ.get("COOKIE_SUPABASE_URL", "https://ofijopixtpwahgbwyutc.supabase.co")
-COOKIE_SUPABASE_KEY = os.environ.get("COOKIE_SUPABASE_KEY")
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+BUCKET_NAME = "easyhits4u-captchas-v2"
+DATASET_REPO = "zenadazurli/easyhits4u-dataset"
+DIM = 64
+REQUEST_TIMEOUT = 15
 
-DEFAULT_PASSWORD = "DDnmVV45!!"
-MAX_ATTEMPTS = 7
-PAUSE_BETWEEN_ACCOUNTS = 15
-PAUSE_BEFORE_RETRY = 30
-TIMEOUT = 90000
+MAX_CONCURRENT = int(os.environ.get("MAX_CONCURRENT", 5))
+STAGGERED_START_DELAY = int(os.environ.get("STAGGERED_START_DELAY", 3))
 
-# 40 nuovi account
-ACCOUNTS = [
-    {'email': 'sandrominori50+ucupamikowa@gmail.com', 'name': 'ucupamikowa'},
-    {'email': 'sandrominori50+ubbmaad@gmail.com', 'name': 'ubbmaad'},
-    {'email': 'sandrominori50+unachizaadaa@gmail.com', 'name': 'unachizaadaa'},
-    {'email': 'sandrominori50+uzofequ@gmail.com', 'name': 'uzofequ'},
-    {'email': 'sandrominori50+ugaglchimulu@gmail.com', 'name': 'ugaglchimulu'},
-    {'email': 'sandrominori50+usfnejafi@gmail.com', 'name': 'usfnejafi'},
-    {'email': 'sandrominori50+ugaufkokagl@gmail.com', 'name': 'ugaufkokagl'},
-    {'email': 'sandrominori50+utuufvo@gmail.com', 'name': 'utuufvo'},
-    {'email': 'sandrominori50+umufela@gmail.com', 'name': 'umufela'},
-    {'email': 'sandrominori50+uzukimice@gmail.com', 'name': 'uzukimice'},
-    {'email': 'sandrominori50+uvatulukofo@gmail.com', 'name': 'uvatulukofo'},
-    {'email': 'sandrominori50+ugetrle@gmail.com', 'name': 'ugetrle'},
-    {'email': 'sandrominori50+usfkugl@gmail.com', 'name': 'usfkugl'},
-    {'email': 'sandrominori50+uzuculo@gmail.com', 'name': 'uzuculo'},
-    {'email': 'sandrominori50+uxipgda@gmail.com', 'name': 'uxipgda'},
-    {'email': 'sandrominori50+ulidazurzmu@gmail.com', 'name': 'ulidazurzmu'},
-    {'email': 'sandrominori50+uncglximo@gmail.com', 'name': 'uncglximo'},
-    {'email': 'sandrominori50+ufezusavo@gmail.com', 'name': 'ufezusavo'},
-    {'email': 'sandrominori50+ulileaature@gmail.com', 'name': 'ulileaature'},
-    {'email': 'sandrominori50+ulorenakino@gmail.com', 'name': 'ulorenakino'},
-    {'email': 'sandrominori50+uqulenazusa@gmail.com', 'name': 'uqulenazusa'},
-    {'email': 'sandrominori50+ukaramu@gmail.com', 'name': 'ukaramu'},
-    {'email': 'sandrominori50+uferalola@gmail.com', 'name': 'uferalola'},
-    {'email': 'sandrominori50+ummmarzsarm@gmail.com', 'name': 'ummmarzsarm'},
-    {'email': 'sandrominori50+udatrlefe@gmail.com', 'name': 'udatrlefe'},
-    {'email': 'sandrominori50+uaakiggzu@gmail.com', 'name': 'uaakiggzu'},
-    {'email': 'sandrominori50+uzorzvu@gmail.com', 'name': 'uzorzvu'},
-    {'email': 'sandrominori50+uwanepgbo@gmail.com', 'name': 'uwanepgbo'},
-    {'email': 'sandrominori50+udioodali@gmail.com', 'name': 'udioodali'},
-    {'email': 'sandrominori50+usadiadmobo@gmail.com', 'name': 'usadiadmobo'},
-    {'email': 'sandrominori50+ulixire@gmail.com', 'name': 'ulixire'},
-    {'email': 'sandrominori50+udiadnczo@gmail.com', 'name': 'udiadnczo'},
-    {'email': 'sandrominori50+uzalesagg@gmail.com', 'name': 'uzalesagg'},
-    {'email': 'sandrominori50+upabbkafone@gmail.com', 'name': 'upabbkafone'},
-    {'email': 'sandrominori50+uramincadkr@gmail.com', 'name': 'uramincadkr'},
-    {'email': 'sandrominori50+uganakaeara@gmail.com', 'name': 'uganakaeara'},
-    {'email': 'sandrominori50+urerafokrne@gmail.com', 'name': 'urerafokrne'},
-    {'email': 'sandrominori50+ufiwakota@gmail.com', 'name': 'ufiwakota'},
-    {'email': 'sandrominori50+ukrfojudi@gmail.com', 'name': 'ukrfojudi'},
-    {'email': 'sandrominori50+uornewafomo@gmail.com', 'name': 'uornewafomo'},
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise ValueError("❌ SUPABASE_URL e SUPABASE_KEY devono essere impostate")
+
+# ==================== LISTA DEI 40 NUOVI ACCOUNT ====================
+NUOVI_ACCOUNT = [
+    'ucupamikowa', 'ubbmaad', 'unachizaadaa', 'uzofequ',
+    'ugaglchimulu', 'usfnejafi', 'ugaufkokagl', 'utuufvo',
+    'umufela', 'uzukimice', 'uvatulukofo', 'ugetrle',
+    'usfkugl', 'uzuculo', 'uxipgda', 'ulidazurzmu',
+    'uncglximo', 'ufezusavo', 'ulileaature', 'ulorenakino',
+    'uqulenazusa', 'ukaramu', 'uferalola', 'ummmarzsarm',
+    'udatrlefe', 'uaakiggzu', 'uzorzvu', 'uwanepgbo',
+    'udioodali', 'usadiadmobo', 'ulixire', 'udiadnczo',
+    'uzalesagg', 'upabbkafone', 'uramincadkr', 'uganakaeara',
+    'urerafokrne', 'ufiwakota', 'ukrfojudi', 'uornewafomo'
 ]
 
-def log(msg):
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
+# ==================== VARIABILI GLOBALI ====================
+X_fast = None
+y_fast = None
+classes_fast = None
 
-def get_all_working_keys():
-    if not KEYS_SUPABASE_KEY:
-        log("❌ KEYS_SUPABASE_KEY non impostata")
-        return []
-    try:
-        supabase = create_client(KEYS_SUPABASE_URL, KEYS_SUPABASE_KEY)
-        resp = supabase.table('browser_use_keys').select('api_key').eq('status', 'working').execute()
-        return [row['api_key'] for row in resp.data] if resp.data else []
-    except Exception as e:
-        log(f"❌ Errore recupero chiavi: {e}")
-        return []
-
-def get_random_working_key(exclude_keys=None):
-    keys = get_all_working_keys()
-    if not keys:
-        return None
-    if exclude_keys:
-        keys = [k for k in keys if k not in exclude_keys]
-    return random.choice(keys) if keys else None
-
-def save_cookie_to_db(email, nome_utente, cookie_string, sesids, user_id):
-    if not COOKIE_SUPABASE_KEY:
-        log("❌ COOKIE_SUPABASE_KEY non impostata")
-        return False
-    try:
-        supabase = create_client(COOKIE_SUPABASE_URL, COOKIE_SUPABASE_KEY)
-        divella_format = f"{nome_utente}|{cookie_string}"
-        data = {
-            'email': email,
-            'nome_utente': nome_utente,
-            'account_name': nome_utente,
-            'divella_format': divella_format,
-            'cookie_string': cookie_string,
-            'sesids': sesids,
-            'user_id': user_id,
-            'status': 'active',
-            'updated_at': datetime.now().isoformat()
-        }
-        supabase.table('account_cookies').upsert(data, on_conflict='email').execute()
-        log(f"   💾 Salvato su Supabase")
-        return True
-    except Exception as e:
-        log(f"   ❌ Errore salvataggio: {e}")
-        return False
-
-async def generate_cookie_for_account(api_key, account, is_retry=False):
-    email = account['email']
-    nome = account['name']
-    
-    log(f"🚀 {nome} - {email}")
-    log(f"   🔑 Chiave: {api_key[:20]}...")
-    if is_retry:
-        log(f"   🔄 TENTATIVO DI RECUPERO")
-    
-    client = AsyncBrowserUse(api_key=api_key)
-    profile = None
+# ==================== FUNZIONI DATASET ====================
+def load_dataset_from_hf():
+    """Carica il dataset da Hugging Face"""
+    global X_fast, y_fast, classes_fast
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] 📥 Caricamento dataset da Hugging Face: {DATASET_REPO}", flush=True)
     
     try:
-        profile = await client.profiles.create(name=f"cookie_{nome}")
-        browser = await client.browsers.create(profile_id=profile.id)
+        dataset = load_dataset(DATASET_REPO, trust_remote_code=True)
+        data = dataset.get("train") if "train" in dataset else dataset
         
-        async with async_playwright() as p:
-            pw_browser = await p.chromium.connect_over_cdp(browser.cdp_url)
-            page = pw_browser.contexts[0].pages[0]
-            
-            await page.goto("https://www.easyhits4u.com/logon/", timeout=TIMEOUT)
-            await page.wait_for_timeout(5000)
-            
-            try:
-                await page.wait_for_selector('input[name="cf-turnstile-response"]', timeout=30000)
-                await page.wait_for_timeout(3000)
-            except:
-                log(f"   ⚠️ Turnstile non rilevato, procedo...")
-            
-            await page.fill('#username', email)
-            await page.fill('#password', DEFAULT_PASSWORD)
-            await page.keyboard.press('Enter')
-            
-            await page.wait_for_timeout(45000)
-            
-            cookies = await page.context.cookies()
-            cookie_string = '; '.join([f"{c['name']}={c['value']}" for c in cookies])
-            sesids = next((c['value'] for c in cookies if c['name'] == 'sesids'), None)
-            user_id = next((c['value'] for c in cookies if c['name'] == 'user_id'), None)
-            
-            if sesids and user_id:
-                log(f"   ✅ OK - sesids={sesids}")
-                save_cookie_to_db(email, nome, cookie_string, sesids, user_id)
-                return True
-            else:
-                log(f"   ❌ Cookie non trovati")
-                return False
-            
-    except Exception as e:
-        error_msg = str(e)
-        if "429" in error_msg:
-            log(f"   ⚠️ RATE LIMIT (429)")
-            return "rate_limit"
-        else:
-            log(f"   ❌ Errore: {error_msg[:80]}")
-            return False
-    finally:
-        if profile:
-            try:
-                await client.profiles.delete(profile.id)
-            except:
-                pass
-        try:
-            await client.close()
-        except:
-            pass
-        await asyncio.sleep(2)
-        gc.collect()
-
-async def main():
-    log("=" * 60)
-    log("CRON JOB V2 - 40 NUOVI ACCOUNT CON RETRY")
-    log("=" * 60)
-    
-    if not KEYS_SUPABASE_KEY:
-        log("❌ Variabile KEYS_SUPABASE_KEY non impostata")
-        return
-    
-    all_keys = get_all_working_keys()
-    if not all_keys:
-        log("❌ Nessuna chiave working")
-        return
-    
-    log(f"🔑 Chiavi working: {len(all_keys)}")
-    
-    # ==================== PRIMO CICLO ====================
-    successi = 0
-    falliti_list = []
-    
-    for i, account in enumerate(ACCOUNTS):
-        log(f"\n📌 [{i+1}/{len(ACCOUNTS)}] {account['name']}")
+        X = []
+        y = []
+        class_to_idx = {}
         
-        used_keys = []
-        success = False
-        
-        for attempt in range(MAX_ATTEMPTS):
-            api_key = get_random_working_key(exclude_keys=used_keys)
-            if not api_key:
-                break
-            
-            result = await generate_cookie_for_account(api_key, account, is_retry=False)
-            
-            if result == True:
-                success = True
-                successi += 1
-                break
-            elif result == "rate_limit":
-                used_keys.append(api_key)
-                log(f"   🔄 Rate limit, cambio chiave ({attempt+1}/{MAX_ATTEMPTS})...")
+        for item in data:
+            features = item.get("X")
+            label_idx = item.get("y")
+            if features is None or label_idx is None:
                 continue
+            
+            if hasattr(data.features['y'], 'names'):
+                class_name = data.features['y'].names[label_idx]
             else:
-                # Fallimento non dovuto a rate limit
-                break
+                class_name = str(label_idx)
+            
+            if class_name not in class_to_idx:
+                class_to_idx[class_name] = len(class_to_idx)
+            
+            X.append(np.array(features, dtype=np.float32))
+            y.append(class_to_idx[class_name])
         
-        if not success:
-            falliti_list.append(account)
-            log(f"   ❌ Account fallito, verrà ritentato")
-        
-        if i < len(ACCOUNTS) - 1:
-            await asyncio.sleep(PAUSE_BETWEEN_ACCOUNTS)
+        if X:
+            X_fast = np.vstack(X).astype(np.float32)
+            y_fast = np.array(y, dtype=np.int32)
+            classes_fast = {v: k for k, v in class_to_idx.items()}
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] ✅ Dataset caricato: {X_fast.shape[0]} vettori, {len(classes_fast)} classi", flush=True)
+            return True
+        else:
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] ❌ Nessun dato valido nel dataset", flush=True)
+            return False
+    except Exception as e:
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] ❌ Errore caricamento dataset: {e}", flush=True)
+        return False
+
+# ==================== FUNZIONI FIGURE ====================
+def centra_figura(image):
+    """Centra e ritaglia la figura"""
+    if len(image.shape) == 3:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = image
     
-    log(f"\n📊 Primo ciclo completato: {successi} successi, {len(falliti_list)} falliti")
+    _, thresh = cv2.threshold(gray, 240, 255, cv2.THRESH_BINARY_INV)
+    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return cv2.resize(image, (DIM, DIM))
+    cnt = max(contours, key=cv2.contourArea)
+    x, y, w, h = cv2.boundingRect(cnt)
+    crop = image[y:y+h, x:x+w)
+    return cv2.resize(crop, (DIM, DIM))
+
+def estrai_descrittori(img):
+    """Estrae descrittori per la figura"""
+    if len(img.shape) == 3:
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = img
     
-    # ==================== SECONDO CICLO (RITENTATIVI) ====================
-    if falliti_list:
-        log("\n" + "=" * 60)
-        log(f"🔄 SECONDO CICLO - RITENTO {len(falliti_list)} ACCOUNT FALLITI")
-        log("=" * 60)
-        
-        # Attendi prima di ritentare
-        log(f"⏳ Attesa {PAUSE_BEFORE_RETRY} secondi prima del secondo ciclo...")
-        await asyncio.sleep(PAUSE_BEFORE_RETRY)
-        
-        recuperati = 0
-        
-        for i, account in enumerate(falliti_list):
-            log(f"\n📌 RITENTO [{i+1}/{len(falliti_list)}] {account['name']}")
+    _, thresh = cv2.threshold(gray, 240, 255, cv2.THRESH_BINARY_INV)
+    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    circularity = 0.0
+    aspect_ratio = 0.0
+    if contours:
+        cnt = max(contours, key=cv2.contourArea)
+        peri = cv2.arcLength(cnt, True)
+        area = cv2.contourArea(cnt)
+        if peri != 0:
+            circularity = 4.0 * np.pi * area / (peri * peri)
+        x, y, w, h = cv2.boundingRect(cnt)
+        aspect_ratio = float(w)/h if h != 0 else 0.0
+    
+    moments = cv2.moments(thresh)
+    hu = cv2.HuMoments(moments).flatten().tolist()
+    
+    h, w = img.shape[:2]
+    cx, cy = w//2, h//2
+    raggi = [int(min(h,w)*r) for r in (0.2, 0.4, 0.6, 0.8)]
+    radiale = []
+    for r in raggi:
+        mask = np.zeros((h,w), np.uint8)
+        cv2.circle(mask, (cx,cy), r, 255, -1)
+        mean = cv2.mean(img, mask=mask)[:3]
+        radiale.extend([m/255.0 for m in mean])
+    
+    spaziale = []
+    quadranti = [(0,0,cx,cy), (cx,0,w,cy), (0,cy,cx,h), (cx,cy,w,h)]
+    for (x1,y1,x2,y2) in quadranti:
+        roi = img[y1:y2, x1:x2]
+        if roi.size > 0:
+            mean = cv2.mean(roi)[:3]
+            spaziale.extend([m/255.0 for m in mean])
+    
+    return radiale + spaziale + [circularity, aspect_ratio] + hu
+
+def predict_figure(img_crop):
+    """Riconosce una figura usando il dataset"""
+    global X_fast, y_fast, classes_fast
+    
+    if X_fast is None or img_crop is None or img_crop.size == 0:
+        return None
+    
+    img_centrata = centra_figura(img_crop)
+    features = np.array(estrai_descrittori(img_centrata), dtype=float)
+    distances = np.linalg.norm(X_fast - features, axis=1)
+    best_idx = np.argmin(distances)
+    return classes_fast.get(int(y_fast[best_idx]), None)
+
+def crop_safe(img, coords):
+    """Ritaglia in sicurezza dalle coordinate"""
+    try:
+        x1, y1, x2, y2 = map(int, coords.split(","))
+    except:
+        return None
+    h, w = img.shape[:2]
+    x1 = max(0, min(w-1, x1))
+    x2 = max(0, min(w, x2))
+    y1 = max(0, min(h-1, y1))
+    y2 = max(0, min(h, y2))
+    if x2 <= x1 or y2 <= y1:
+        return None
+    crop = img[y1:y2, x1:x2]
+    return crop
+
+# ==================== SURF ACCOUNT (THREAD) ====================
+def surf_account(account_name, cookie_string, stats, supabase_client):
+    """Esegue surf per un account (thread)"""
+    session = requests.Session()
+    session.headers.update({"Cookie": cookie_string})
+    
+    log(f"📧 Account: {account_name}")
+    
+    # Attiva la sessione di surf
+    try:
+        log(f"[{account_name}] 🔄 Attivazione sessione surf...")
+        session.get("https://www.easyhits4u.com/surf/", verify=False, timeout=10)
+        time.sleep(2)
+    except Exception as e:
+        log(f"[{account_name}] ⚠️ Errore attivazione surf: {e}")
+    
+    errori_consecutivi = 0
+    MAX_ERRORI = 3
+    captcha_counter = 0
+    
+    for i in range(15):
+        try:
+            r = session.post(
+                "https://www.easyhits4u.com/surf/?ajax=1&try=1",
+                verify=False, timeout=REQUEST_TIMEOUT
+            )
             
-            used_keys = []
-            success = False
+            if r.status_code != 200:
+                time.sleep(3)
+                continue
             
-            for attempt in range(MAX_ATTEMPTS):
-                api_key = get_random_working_key(exclude_keys=used_keys)
-                if not api_key:
-                    break
+            data = r.json()
+            surfses = data.get("surfses", {})
+            urlid = surfses.get("urlid")
+            qpic = surfses.get("qpic")
+            picmap = data.get("picmap")
+            
+            if not urlid or not qpic:
+                log(f"[{account_name}] ⚠️ Nessun captcha trovato")
+                errori_consecutivi += 1
+                if errori_consecutivi >= MAX_ERRORI:
+                    log(f"[{account_name}] ❌ Troppi errori, fermo account")
+                    return
+                time.sleep(3)
+                continue
+            
+            errori_consecutivi = 0
+            
+            # Scarica l'immagine
+            img_data = session.get(
+                f"https://www.easyhits4u.com/simg/{qpic}.jpg",
+                verify=False
+            ).content
+            img = cv2.imdecode(np.frombuffer(img_data, np.uint8), cv2.IMREAD_COLOR)
+            
+            if picmap is not None:
+                # CAPTCHA A FIGURE
+                log(f"[{account_name}] 🖼️ Captcha a figure rilevato")
                 
-                result = await generate_cookie_for_account(api_key, account, is_retry=True)
+                crops = [crop_safe(img, p.get("coords", "")) for p in picmap]
+                labels = []
+                for crop in crops:
+                    if crop is not None and crop.size > 0:
+                        label = predict_figure(crop)
+                        labels.append(label)
+                    else:
+                        labels.append(None)
                 
-                if result == True:
-                    success = True
-                    recuperati += 1
-                    successi += 1
-                    break
-                elif result == "rate_limit":
-                    used_keys.append(api_key)
-                    log(f"   🔄 Rate limit, cambio chiave ({attempt+1}/{MAX_ATTEMPTS})...")
-                    continue
-                else:
-                    break
-            
-            if success:
-                log(f"   ✅ RECUPERATO!")
+                # Cerca duplicati
+                seen = {}
+                chosen_idx = None
+                for i, label in enumerate(labels):
+                    if label and label != "errore":
+                        if label in seen:
+                            chosen_idx = seen[label]
+                            break
+                        seen[label] = i
+                
+                if chosen_idx is None:
+                    log(f"[{account_name}] ❌ Nessun duplicato trovato")
+                    # Salva il captcha non risolto
+                    salva_captcha(supabase_client, account_name, qpic, img, picmap, labels, "nessun_duplicato", urlid, stats)
+                    return
+                
+                word = picmap[chosen_idx]["value"]
+                log(f"[{account_name}] ✅ Duplicato: figura {chosen_idx+1} -> word={word}")
             else:
-                log(f"   ❌ Recupero fallito")
+                # CAPTCHA MATEMATICO
+                log(f"[{account_name}] 🧮 Captcha matematico rilevato - SALVO PER ANALISI")
+                salva_captcha(supabase_client, account_name, qpic, img, None, None, "matematico_non_risolto", urlid, stats)
+                return
             
-            if i < len(falliti_list) - 1:
-                await asyncio.sleep(PAUSE_BETWEEN_ACCOUNTS)
-        
-        log(f"\n📊 Recuperati nel secondo ciclo: {recuperati}/{len(falliti_list)}")
+            # Invia risposta
+            url = f"https://www.easyhits4u.com/surf/?f=surf&urlid={urlid}&surftype=2&ajax=1&word={word}&screen_width=1024&screen_height=768"
+            url += "&window_width=1024&window_height=643&top_width=1024&top_height=50"
+            url += "&fpcode=TW96aWxsYTsgTmV0c2NhcGU7IDUuMCAoV2luZG93cyk7IFdpbjMy"
+            url += f"&cit={int(time.time() * 1000)}&try=1"
+            
+            resp = session.get(url, verify=False, timeout=REQUEST_TIMEOUT)
+            response_data = resp.json()
+            
+            if response_data.get("warning") == "wrong_choice":
+                log(f"[{account_name}] ❌ Risposta sbagliata: {word}")
+                salva_captcha(supabase_client, account_name, qpic, img, picmap, None, "wrong_choice", urlid, stats)
+                return
+            
+            captcha_counter += 1
+            stats['risolti'] += 1
+            log(f"[{account_name}] ✅ OK #{captcha_counter} - word={word}")
+            
+            # Pausa casuale
+            time.sleep(random.uniform(2, 4))
+            
+        except Exception as e:
+            log(f"[{account_name}] ❌ Errore: {e}")
+            errori_consecutivi += 1
+            if errori_consecutivi >= MAX_ERRORI:
+                log(f"[{account_name}] ❌ Troppi errori, fermo account")
+                return
+            time.sleep(3)
     
-    # ==================== RIEPILOGO FINALE ====================
-    log("\n" + "=" * 60)
-    log("📊 RIEPILOGO FINALE")
+    log(f"[{account_name}] ✅ Completato: {captcha_counter} captcha risolti")
+
+def salva_captcha(supabase_client, account_name, qpic, img, picmap, labels, motivo, urlid, stats):
+    """Salva il captcha non risolto su Supabase"""
+    try:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S%f")
+        
+        if picmap is not None:
+            prefix = "figure"
+            table = "figure_captchas_v2"
+        else:
+            prefix = "math"
+            table = "math_captchas_v2"
+        
+        file_path = f"{prefix}/{timestamp}_{account_name}.png"
+        _, buffer = cv2.imencode('.png', img)
+        img_bytes = buffer.tobytes()
+        
+        supabase_client.storage.from_(BUCKET_NAME).upload(file_path, img_bytes)
+        
+        data = {
+            'account_name': account_name,
+            'image_path': file_path,
+            'timestamp': datetime.now().isoformat(),
+            'status': 'unsolved',
+            'motivo': motivo,
+            'urlid': urlid,
+            'qpic': qpic
+        }
+        
+        if labels:
+            data['labels_predette'] = json.dumps(labels)
+        
+        supabase_client.table(table).insert(data).execute()
+        
+        if picmap is not None:
+            stats['figure'] += 1
+        else:
+            stats['math'] += 1
+        
+        log(f"[{account_name}] 💾 Captcha salvato")
+    except Exception as e:
+        log(f"[{account_name}] ❌ Errore salvataggio: {e}")
+
+def log(msg):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[{timestamp}] {msg}", flush=True)
+
+# ==================== MAIN ====================
+def main():
     log("=" * 60)
-    log(f"✅ Successi totali: {successi}")
-    log(f"❌ Falliti totali: {len(ACCOUNTS) - successi}")
-    log(f"📊 Totale account: {len(ACCOUNTS)}")
+    log("🚀 CAPTCHA COLLECTOR V2 - MULTITHREADING")
+    log("=" * 60)
+    
+    if not SUPABASE_KEY:
+        log("❌ SUPABASE_KEY non impostata")
+        return
+    
+    # Carica dataset
+    if not load_dataset_from_hf():
+        log("❌ Dataset non caricato")
+        return
+    
+    # Connessione Supabase
+    supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    
+    # Legge i cookie dei 40 nuovi account
+    try:
+        result = supabase_client.table('account_cookies')\
+            .select('account_name, cookie_string')\
+            .in_('account_name', NUOVI_ACCOUNT)\
+            .execute()
+        
+        cookies = {}
+        for row in result.data:
+            if row.get('cookie_string'):
+                cookies[row['account_name']] = row['cookie_string']
+        
+        log(f"📋 Letti {len(cookies)} cookie dei 40 nuovi account")
+    except Exception as e:
+        log(f"❌ Errore lettura cookie: {e}")
+        return
+    
+    if not cookies:
+        log("❌ Nessun cookie trovato per i 40 nuovi account")
+        return
+    
+    # Statistiche condivise
+    stats = {'figure': 0, 'math': 0, 'errors': 0, 'surf': 0, 'risolti': 0}
+    
+    # Avvia thread (multithreading come nell'originale)
+    threads = []
+    for account_name, cookie_string in cookies.items():
+        while len(threads) >= MAX_CONCURRENT:
+            threads = [t for t in threads if t.is_alive()]
+            time.sleep(1)
+        
+        t = threading.Thread(
+            target=surf_account,
+            args=(account_name, cookie_string, stats, supabase_client)
+        )
+        t.start()
+        threads.append(t)
+        time.sleep(STAGGERED_START_DELAY)
+    
+    # Aspetta che tutti i thread finiscano
+    for t in threads:
+        t.join()
+    
+    log("=" * 60)
+    log("📊 STATISTICHE TOTALI")
+    log(f"   Figure salvate: {stats['figure']}")
+    log(f"   Matematici salvati: {stats['math']}")
+    log(f"   Captcha risolti: {stats['risolti']}")
     log("=" * 60)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        main()
+    except KeyboardInterrupt:
+        log("\n🛑 Interrotto")
+        sys.exit(0)
